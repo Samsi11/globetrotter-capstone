@@ -44,16 +44,20 @@
 
     <div class="detail-panel" id="detailPanel">
       <button class="close-x" id="detailClose">✕</button>
-      <span class="cat-label" id="detailCatLabel"></span>
-      <h3 id="detailName"></h3>
-      <p id="detailAddress"></p>
-      <p id="detailPhone"></p>
-      <p id="detailRating"></p>
-      <div class="detail-actions">
-        <button class="btn btn-primary" id="btnDirections">🧭 Get directions</button>
-        <a class="btn btn-ghost" id="btnCall" style="display:none; text-decoration:none;">📞 Call</a>
+      <img class="detail-photo" id="detailPhoto" style="display:none;" alt="" />
+      <span class="photo-badge" id="detailPhotoBadge" style="display:none;">Reference photo — to be replaced</span>
+      <div class="inner-pad">
+        <span class="cat-label" id="detailCatLabel"></span>
+        <h3 id="detailName"></h3>
+        <p id="detailAddress"></p>
+        <p id="detailPhone"></p>
+        <p id="detailRating"></p>
+        <div class="detail-actions">
+          <button class="btn btn-primary" id="btnDirections">🧭 Get directions</button>
+          <a class="btn btn-ghost" id="btnCall" style="display:none; text-decoration:none;">📞 Call</a>
+        </div>
+        <div class="route-info" id="routeInfo"></div>
       </div>
-      <div class="route-info" id="routeInfo"></div>
     </div>
 
     <div class="assistant-fab" id="assistantFab">💬</div>

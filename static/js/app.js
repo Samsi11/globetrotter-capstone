@@ -151,6 +151,17 @@ function selectPoi(id){
   document.getElementById('detailAddress').textContent = "📍 " + p.address + (p.note ? " — " + p.note : "");
   document.getElementById('detailPhone').textContent = p.phone ? "📞 " + p.phone : "";
   document.getElementById('detailRating').textContent = p.rating ? "★ " + Number(p.rating).toFixed(1) + " rating" : "";
+  const photoEl = document.getElementById('detailPhoto');
+  const badgeEl = document.getElementById('detailPhotoBadge');
+  if(p.image){
+    photoEl.src = p.image;
+    photoEl.alt = p.name;
+    photoEl.style.display = 'block';
+    badgeEl.style.display = p.image_placeholder ? 'block' : 'none';
+  } else {
+    photoEl.style.display = 'none';
+    badgeEl.style.display = 'none';
+  }
 
   const callBtn = document.getElementById('btnCall');
   if(p.phone){ callBtn.style.display='inline-flex'; callBtn.href = 'tel:' + p.phone.replace(/\s/g,''); }
@@ -251,6 +262,8 @@ function handleAssistantAction(action){
     document.getElementById('detailPhone').textContent = '';
     document.getElementById('detailRating').textContent = '';
     document.getElementById('btnCall').style.display = 'none';
+    document.getElementById('detailPhoto').style.display = 'none';
+    document.getElementById('detailPhotoBadge').style.display = 'none';
     detailPanel.classList.add('show');
 
     const routeInfo = document.getElementById('routeInfo');
