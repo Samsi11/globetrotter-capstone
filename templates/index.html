@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Tropicana Guide — Mvan, Yaoundé</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">
+    <div class="mark"></div>
+    <div>
+      <div class="brand-text">Tropicana Guide</div>
+      <div class="brand-sub">Mvan · Ekoumdoum · Yaoundé</div>
+    </div>
+  </div>
+  <div class="route-ribbon"></div>
+  <div class="locale-pill">📍 Tropicana Roundabout, Mvan</div>
+</div>
+
+<div class="app">
+  <button class="sidebar-toggle" id="sidebarToggle">☰</button>
+
+  <div class="sidebar" id="sidebar">
+    <div class="search-block">
+      <h1>Find your way around</h1>
+      <p class="tag">Real places around the Tropicana / Mvan / Ekoumdoum corridor in Yaoundé — search by name, or filter by category.</p>
+      <div class="search-input-row">
+        <span class="icon">🔍</span>
+        <input type="text" id="searchInput" placeholder="Search hotels, hospitals, markets…" />
+      </div>
+    </div>
+    <div class="chips" id="chipRow"></div>
+    <div class="list" id="poiList"></div>
+  </div>
+
+  <div class="map-wrap">
+    <div id="map"></div>
+
+    <div class="detail-panel" id="detailPanel">
+      <button class="close-x" id="detailClose">✕</button>
+      <span class="cat-label" id="detailCatLabel"></span>
+      <h3 id="detailName"></h3>
+      <p id="detailAddress"></p>
+      <p id="detailPhone"></p>
+      <p id="detailRating"></p>
+      <div class="detail-actions">
+        <button class="btn btn-primary" id="btnDirections">🧭 Get directions</button>
+        <a class="btn btn-ghost" id="btnCall" style="display:none; text-decoration:none;">📞 Call</a>
+      </div>
+      <div class="route-info" id="routeInfo"></div>
+    </div>
+
+    <div class="assistant-fab" id="assistantFab">💬</div>
+    <div class="assistant-panel" id="assistantPanel">
+      <div class="assistant-head">
+        <div>
+          <div class="title">Ask your Tropicana guide</div>
+          <div class="sub">Local AI assistant · grounded in the map data</div>
+        </div>
+        <button id="assistantClose">✕</button>
+      </div>
+      <div class="assistant-messages" id="assistantMessages">
+        <div class="msg bot">Mbolo! 👋 I'm your local guide for the Tropicana area. Ask me things like "where can I get fuel near here" or "any good restaurants close by" and I'll point you to real places on this map.</div>
+      </div>
+      <div class="assistant-input-row">
+        <input type="text" id="assistantInput" placeholder="Ask about the area…" />
+        <button id="assistantSend">Send</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>

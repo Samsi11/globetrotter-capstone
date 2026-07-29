@@ -1,12 +1,8 @@
 """
 tests/conftest.py
 
-Shared pytest fixtures for the GlobeTrotter test suite.
-
-Key idea: we monkeypatch the file paths used by app/models.py so that every
-test run reads/writes to temporary files instead of your real data/*.json
-files. This means running tests will NEVER corrupt your actual users,
-itineraries, or destinations data.
+Shared pytest fixtures. Isolates test data from the real data/pois.json
+by monkeypatching the file path models.py reads from.
 """
 import json
 import os
@@ -14,7 +10,6 @@ import sys
 
 import pytest
 
-# Make sure "app" package is importable regardless of where pytest is invoked from
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app import create_app
@@ -23,47 +18,22 @@ from app import models
 
 @pytest.fixture
 def app(tmp_path, monkeypatch):
-    """Create a Flask app configured to use isolated, temporary JSON files."""
-    users_file = tmp_path / "users.json"
-    itineraries_file = tmp_path / "itineraries.json"
-    destinations_file = tmp_path / "destinations.json"
+    pois_file = tmp_path / "pois.json"
 
-    # Redirect the model layer's file paths to our temp files
-    monkeypatch.setattr(models, "USERS_FILE", str(users_file))
-    monkeypatch.setattr(models, "ITINERARIES_FILE", str(itineraries_file))
-    monkeypatch.setattr(models, "DESTINATIONS_FILE", str(destinations_file))
+    monkeypatch.setattr(models, "POIS_FILE", str(pois_file))
 
-    # Seed a small, predictable destinations catalogue for tests
-    seed_destinations = [
-        {
-            "id": "dest-001",
-            "name": "Bali",
-            "country": "Indonesia",
-            "continent": "Asia",
-            "description": "Tropical island known for beaches and temples.",
-            "tags": ["beach", "culture", "budget"],
-            "avg_cost_per_day": 45,
-        },
-        {
-            "id": "dest-002",
-            "name": "Paris",
-            "country": "France",
-            "continent": "Europe",
-            "description": "City of art and cuisine.",
-            "tags": ["culture", "food", "city"],
-            "avg_cost_per_day": 150,
-        },
-        {
-            "id": "dest-003",
-            "name": "Bangkok",
-            "country": "Thailand",
-            "continent": "Asia",
-            "description": "Street food capital.",
-            "tags": ["food", "budget", "culture"],
-            "avg_cost_per_day": 35,
-        },
+    seed_pois = [
+        {"id": "p1", "name": "Pharmacie Tropicana", "category": "pharmacy",
+         "lat": 3.8192646, "lng": 11.5233073, "address": "N2, Tropicana, Mvan, Yaoundé",
+         "phone": "+237 6 73 22 71 44", "rating": 3.8, "note": "Central pharmacy.", "image": None},
+        {"id": "p2", "name": "TotalEnergies Ekoumdoum", "category": "fuel",
+         "lat": 3.8251685, "lng": 11.5368803, "address": "Ekoumdoum, Yaoundé",
+         "phone": "+237 6 70 95 00 00", "rating": 3.6, "note": "24-hour fuel station.", "image": None},
+        {"id": "p3", "name": "SIZZLE & SIP", "category": "restaurant",
+         "lat": 3.823414, "lng": 11.5198316, "address": "Montée Mvan, Yaoundé",
+         "phone": "+237 6 50 52 08 68", "rating": 4.3, "note": "Grill restaurant.", "image": None},
     ]
-    destinations_file.write_text(json.dumps(seed_destinations), encoding="utf-8")
+    pois_file.write_text(json.dumps(seed_pois), encoding="utf-8")
 
     flask_app = create_app()
     flask_app.config.update({"TESTING": True})
@@ -73,25 +43,4 @@ def app(tmp_path, monkeypatch):
 
 @pytest.fixture
 def client(app):
-    """A Flask test client for firing requests at the app without a real server."""
     return app.test_client()
-
-
-# ---------------------------------------------------------------------------
-# Shared helper functions (imported directly by test files)
-# ---------------------------------------------------------------------------
-def register_user(client, username="alice", password="s3cr3t", preferences=None):
-    if preferences is None:
-        preferences = ["beach", "food"]
-    return client.post(
-        "/register",
-        json={"username": username, "password": password, "preferences": preferences},
-    )
-
-
-def login_user(client, username="alice", password="s3cr3t"):
-    return client.post("/login", json={"username": username, "password": password})
-
-
-def auth_header(token):
-    return {"Authorization": f"Bearer {token}"}

@@ -1,32 +1,35 @@
 """
 app/__init__.py
 
-Flask application factory.
+Flask application factory for the Tropicana Guide app.
 """
 import os
+
 from flask import Flask
+from dotenv import load_dotenv
 
 
 def create_app():
     """Create and configure the Flask application."""
-    app = Flask(__name__)
+    load_dotenv()  # loads ANTHROPIC_API_KEY from .env if present, no error if missing
 
-    # Secret key used for JWT signing.  Set the SECRET_KEY environment variable
-    # in production.  The fallback is intentionally weak and must never be used
-    # outside of local development.
-    app.config["SECRET_KEY"] = os.environ.get(
-        "SECRET_KEY", "globetrotter-secret-change-in-prod"
+    app = Flask(
+        __name__,
+        static_folder="../static",
+        template_folder="../templates",
     )
+    app.config["SECRET_KEY"] = "tropicana-guide-secret-change-in-prod"
 
-    # Register all route blueprints
-    from app.auth import auth_bp
-    from app.destinations import destinations_bp
-    from app.recommendations import recommendations_bp
-    from app.itineraries import itineraries_bp
+    from app.locations import locations_bp
+    from app.assistant import assistant_bp
 
-    app.register_blueprint(auth_bp)
-    app.register_blueprint(destinations_bp)
-    app.register_blueprint(recommendations_bp)
-    app.register_blueprint(itineraries_bp)
+    app.register_blueprint(locations_bp)
+    app.register_blueprint(assistant_bp)
+
+    from flask import render_template
+
+    @app.route("/")
+    def index():
+        return render_template("index.html")
 
     return app
