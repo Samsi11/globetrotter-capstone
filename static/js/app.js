@@ -15,7 +15,8 @@ const CATEGORIES = {
   school:     { label: "Schools",             color: "#163A2E", icon: "🎓" },
   market:     { label: "Markets",              color: "#6B4226", icon: "🧺" },
   fuel:       { label: "Fuel Stations",        color: "#2D6A4F", icon: "⛽" },
-  bank:       { label: "Banks",                color: "#5C4D7D", icon: "🏦" }
+  bank:       { label: "Banks",                color: "#5C4D7D", icon: "🏦" },
+  office:     { label: "Offices & Organisations", color: "#8A6D3B", icon: "🏢" }
 };
 
 let ALL_POIS = [];
@@ -230,6 +231,41 @@ function addMessage(text, role, sourceTag){
   assistantMessages.scrollTop = assistantMessages.scrollHeight;
 }
 
+function handleAssistantAction(action){
+  if(!action) return;
+
+  if(action.type === 'focus'){
+    map.flyTo([action.lat, action.lng], 16, { duration: 0.6 });
+    L.popup().setLatLng([action.lat, action.lng]).setContent(`<b>${action.label}</b>`).openOn(map);
+    return;
+  }
+
+  if(action.type === 'directions'){
+    const { from, to } = action;
+    if(routeLayer){ map.removeLayer(routeLayer); routeLayer = null; }
+
+    document.getElementById('detailCatLabel').textContent = "Directions";
+    document.getElementById('detailCatLabel').style.background = "#B33F2A";
+    document.getElementById('detailName').textContent = to.label;
+    document.getElementById('detailAddress').textContent = `From ${from.label} to ${to.label}`;
+    document.getElementById('detailPhone').textContent = '';
+    document.getElementById('detailRating').textContent = '';
+    document.getElementById('btnCall').style.display = 'none';
+    detailPanel.classList.add('show');
+
+    const routeInfo = document.getElementById('routeInfo');
+    routeInfo.textContent = "Drawing your route…";
+    routeInfo.classList.add('show');
+
+    fetchRoute(
+      { lat: from.lat, lng: from.lng, label: from.label },
+      { lat: to.lat, lng: to.lng },
+      routeInfo
+    );
+    map.flyTo([to.lat, to.lng], 15, { duration: 0.6 });
+  }
+}
+
 async function sendAssistantMessage(){
   const text = assistantInput.value.trim();
   if(!text) return;
@@ -254,6 +290,7 @@ async function sendAssistantMessage(){
     addMessage(data.reply, 'bot', data.source);
     chatHistory.push({ role:'user', content: text });
     chatHistory.push({ role:'assistant', content: data.reply });
+    handleAssistantAction(data.action);
   } catch(err){
     typing.remove();
     addMessage("I couldn't reach the guide service right now — please check that the app server is running.", 'system-note');
