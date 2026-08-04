@@ -21,6 +21,9 @@
   </div>
   <div class="route-ribbon"></div>
   <div class="locale-pill">📍 Tropicana Roundabout, Mvan</div>
+  <div class="account-area" id="accountArea">
+    <button class="btn-account" id="accountBtn">👤 Sign in</button>
+  </div>
 </div>
 
 <div class="app">
@@ -64,19 +67,45 @@
     <div class="assistant-panel" id="assistantPanel">
       <div class="assistant-head">
         <div>
-          <div class="title">Ask your Tropicana guide</div>
-          <div class="sub">Local AI assistant · grounded in the map data</div>
+          <div class="title">Ask Wura</div>
+          <div class="sub">Your Tropicana guide · grounded in the map data</div>
         </div>
-        <button id="assistantClose">✕</button>
+        <div class="assistant-head-actions">
+          <button id="assistantHistoryBtn" title="Your chats" style="display:none;">📁</button>
+          <button id="assistantClose">✕</button>
+        </div>
+      </div>
+      <div class="assistant-conversations" id="assistantConversations" style="display:none;">
+        <button class="btn btn-ghost btn-newchat" id="btnNewChat">+ New chat</button>
+        <div class="conversation-list" id="conversationList"></div>
       </div>
       <div class="assistant-messages" id="assistantMessages">
-        <div class="msg bot">Mbolo! 👋 I'm your local guide for the Tropicana area. Ask me things like "where can I get fuel near here" or "any good restaurants close by" and I'll point you to real places on this map.</div>
+        <div class="msg bot">Mbolo! 👋 I'm Wura, your local guide for the Tropicana area. Ask me things like "where can I get fuel near here" or "any good restaurants close by" and I'll point you to real places on this map.</div>
       </div>
-      <div class="assistant-input-row">
+      <div class="assistant-input-row" id="assistantInputRow">
         <input type="text" id="assistantInput" placeholder="Ask about the area…" />
         <button id="assistantSend">Send</button>
       </div>
     </div>
+  </div>
+</div>
+
+<div class="auth-modal-overlay" id="authModalOverlay">
+  <div class="auth-modal">
+    <button class="close-x" id="authModalClose">✕</button>
+    <div class="auth-tabs">
+      <button type="button" class="auth-tab active" id="tabLogin">Sign in</button>
+      <button type="button" class="auth-tab" id="tabRegister">Create account</button>
+    </div>
+    <form id="authForm">
+      <label for="authUsername">Username</label>
+      <input type="text" id="authUsername" required minlength="3" autocomplete="username" />
+      <label for="authPassword">Password</label>
+      <input type="password" id="authPassword" required minlength="6" autocomplete="current-password" />
+      <div class="auth-error" id="authError"></div>
+      <button type="submit" class="btn btn-primary" id="authSubmit">Sign in</button>
+    </form>
+    <p class="auth-note">Signing in isn't required — you can use the guide fully without an account. Sign in to keep your chat history across visits.</p>
   </div>
 </div>
 

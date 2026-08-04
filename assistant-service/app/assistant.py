@@ -12,6 +12,17 @@ import os
 import requests
 from flask import Blueprint, current_app, jsonify, request
 
+from app.db import (
+    save_message,
+    create_conversation,
+    touch_conversation,
+    get_conversations,
+    get_conversation_owner,
+    get_conversation_messages,
+    delete_conversation,
+)
+from app.auth_util import get_user_id_from_request
+
 assistant_bp = Blueprint("assistant", __name__)
 
 ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
@@ -40,6 +51,12 @@ CATEGORY_KEYWORDS = {
     "office": ["office", "organisation", "organization", "association"],
 }
 
+CATEGORY_LABELS = {
+    "hotel": "Hotels", "restaurant": "Restaurants", "hospital": "Hospitals & Clinics",
+    "pharmacy": "Pharmacies", "school": "Schools", "market": "Markets",
+    "fuel": "Fuel Stations", "bank": "Banks", "office": "Offices & Organisations",
+}
+
 
 def _get_all_pois():
     resp = requests.get(f"{LOCATIONS_SERVICE_URL}/api/pois", timeout=5)
@@ -58,7 +75,7 @@ def _build_system_prompt(pois):
         context_lines.append(line)
     context = "\n".join(context_lines)
     return (
-        "You are a warm, knowledgeable local tour guide assistant for the "
+        "You are Wura, a warm, knowledgeable local tour guide assistant for the "
         "Tropicana area in Mvan/Ekoumdoum, Yaoundé, Cameroon. You help "
         "residents and visitors find hotels, restaurants, hospitals, "
         "pharmacies, schools, markets, fuel stations, banks, and offices in "
@@ -173,6 +190,21 @@ def _poi_detail_line(p):
     return line
 
 
+def _generate_conversation_title(message, pois):
+    named_matches = _find_matching_pois(message, pois)
+    if _looks_like_directions_query(message) and named_matches:
+        dest = named_matches[-1]
+        return f"Directions to {dest['name']}"
+    if named_matches:
+        return named_matches[0]["name"]
+    lowered = message.lower()
+    for category, keywords in CATEGORY_KEYWORDS.items():
+        if any(k in lowered for k in keywords):
+            return f"{CATEGORY_LABELS.get(category, category.title())} near Tropicana"
+    title = message.strip()
+    return (title[:40] + "…") if len(title) > 40 else (title or "New chat")
+
+
 def _fallback_response(message, pois):
     named_matches = _find_matching_pois(message, pois)
 
@@ -226,10 +258,11 @@ def _fallback_response(message, pois):
 
     if any(g in lowered for g in ["hello", "hi", "mbolo", "hey"]):
         return (
-            "Mbolo! I'm your Tropicana area guide. Ask me to find a specific "
-            "place by name, ask about a category (hotels, restaurants, "
-            "hospitals, pharmacies, schools, markets, fuel stations, banks, "
-            "offices), or ask for directions between two places.",
+            "Mbolo! I'm Wura, your Tropicana area guide. Ask me to find a "
+            "specific place by name, ask about a category (hotels, "
+            "restaurants, hospitals, pharmacies, schools, markets, fuel "
+            "stations, banks, offices), or ask for directions between two "
+            "places.",
             None,
         )
     if any(g in lowered for g in ["thank", "thanks", "merci"]):
@@ -255,10 +288,12 @@ def ask_assistant():
     data = request.get_json(silent=True) or {}
     message = data.get("message", "").strip()
     history = data.get("history", [])
+    conversation_id = data.get("conversation_id")
 
     if not message:
         return jsonify({"error": "message is required"}), 400
 
+    user_id = get_user_id_from_request(request)
     pois = _get_all_pois()
 
     try:
@@ -270,4 +305,49 @@ def ask_assistant():
         reply, action = _fallback_response(message, pois)
         source = "fallback"
 
-    return jsonify({"reply": reply, "source": source, "action": action}), 200
+    if user_id is not None:
+        if conversation_id:
+            owner = get_conversation_owner(conversation_id)
+            if owner != user_id:
+                conversation_id = None
+        if not conversation_id:
+            title = _generate_conversation_title(message, pois)
+            conversation_id = create_conversation(user_id, title)
+        save_message(conversation_id, "user", message)
+        save_message(conversation_id, "assistant", reply, source)
+        touch_conversation(conversation_id)
+
+    return jsonify(
+        {"reply": reply, "source": source, "action": action, "conversation_id": conversation_id}
+    ), 200
+
+
+@assistant_bp.route("/api/assistant/conversations", methods=["GET"])
+def list_conversations():
+    user_id = get_user_id_from_request(request)
+    if user_id is None:
+        return jsonify({"error": "Sign in to view your chats"}), 401
+    return jsonify(get_conversations(user_id)), 200
+
+
+@assistant_bp.route("/api/assistant/conversations/<int:conversation_id>/messages", methods=["GET"])
+def conversation_messages(conversation_id):
+    user_id = get_user_id_from_request(request)
+    if user_id is None:
+        return jsonify({"error": "Sign in to view your chats"}), 401
+    owner = get_conversation_owner(conversation_id)
+    if owner != user_id:
+        return jsonify({"error": "Not found"}), 404
+    return jsonify(get_conversation_messages(conversation_id)), 200
+
+
+@assistant_bp.route("/api/assistant/conversations/<int:conversation_id>", methods=["DELETE"])
+def remove_conversation(conversation_id):
+    user_id = get_user_id_from_request(request)
+    if user_id is None:
+        return jsonify({"error": "Sign in required"}), 401
+    owner = get_conversation_owner(conversation_id)
+    if owner != user_id:
+        return jsonify({"error": "Not found"}), 404
+    delete_conversation(conversation_id)
+    return jsonify({"status": "deleted"}), 200

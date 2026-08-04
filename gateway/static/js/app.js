@@ -223,7 +223,9 @@ const assistantPanel = document.getElementById('assistantPanel');
 const assistantMessages = document.getElementById('assistantMessages');
 const assistantInput = document.getElementById('assistantInput');
 
-assistantFab.addEventListener('click', () => assistantPanel.classList.toggle('show'));
+assistantFab.addEventListener('click', () => {
+  assistantPanel.classList.toggle('show');
+});
 document.getElementById('assistantClose').addEventListener('click', () => assistantPanel.classList.remove('show'));
 
 let chatHistory = [];
@@ -292,10 +294,12 @@ async function sendAssistantMessage(){
   assistantMessages.scrollTop = assistantMessages.scrollHeight;
 
   try{
+    const headers = { 'Content-Type': 'application/json' };
+    if(authToken) headers['Authorization'] = 'Bearer ' + authToken;
     const response = await fetch('/api/assistant', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: text, history: chatHistory })
+      headers,
+      body: JSON.stringify({ message: text, history: chatHistory, conversation_id: currentConversationId })
     });
     const data = await response.json();
     typing.remove();
@@ -303,6 +307,7 @@ async function sendAssistantMessage(){
     addMessage(data.reply, 'bot', data.source);
     chatHistory.push({ role:'user', content: text });
     chatHistory.push({ role:'assistant', content: data.reply });
+    if(data.conversation_id) currentConversationId = data.conversation_id;
     handleAssistantAction(data.action);
   } catch(err){
     typing.remove();
@@ -315,3 +320,177 @@ assistantInput.addEventListener('keydown', e => { if(e.key === 'Enter') sendAssi
 
 /* ---------- Boot ---------- */
 loadPois();
+
+/* ---------- Auth ---------- */
+let authToken = localStorage.getItem('tg_token') || null;
+let currentUsername = localStorage.getItem('tg_username') || null;
+let historyLoaded = false;
+
+const accountBtn = document.getElementById('accountBtn');
+const authModalOverlay = document.getElementById('authModalOverlay');
+const authModalClose = document.getElementById('authModalClose');
+const tabLogin = document.getElementById('tabLogin');
+const tabRegister = document.getElementById('tabRegister');
+const authForm = document.getElementById('authForm');
+const authError = document.getElementById('authError');
+const authSubmit = document.getElementById('authSubmit');
+let authMode = 'login';
+
+function updateAccountUI(){
+  accountBtn.textContent = currentUsername ? `👤 ${currentUsername} (sign out)` : '👤 Sign in';
+  const historyBtn = document.getElementById('assistantHistoryBtn');
+  if(historyBtn) historyBtn.style.display = currentUsername ? 'inline-flex' : 'none';
+}
+updateAccountUI();
+
+accountBtn.addEventListener('click', () => {
+  if(currentUsername){
+    authToken = null; currentUsername = null; historyLoaded = false;
+    currentConversationId = null; viewingHistory = false;
+    localStorage.removeItem('tg_token'); localStorage.removeItem('tg_username');
+    updateAccountUI();
+    showChatView();
+    assistantMessages.innerHTML = '';
+    addMessage("Mbolo! 👋 I'm Wura, your local guide for the Tropicana area. Ask me things like \"where can I get fuel near here\" or \"any good restaurants close by\" and I'll point you to real places on this map.", 'bot');
+    chatHistory = [];
+    return;
+  }
+  authMode = 'login';
+  tabLogin.classList.add('active'); tabRegister.classList.remove('active');
+  authSubmit.textContent = 'Sign in';
+  authError.textContent = '';
+  authModalOverlay.classList.add('show');
+});
+
+authModalClose.addEventListener('click', () => authModalOverlay.classList.remove('show'));
+
+tabLogin.addEventListener('click', () => {
+  authMode = 'login';
+  tabLogin.classList.add('active'); tabRegister.classList.remove('active');
+  authSubmit.textContent = 'Sign in';
+  authError.textContent = '';
+});
+tabRegister.addEventListener('click', () => {
+  authMode = 'register';
+  tabRegister.classList.add('active'); tabLogin.classList.remove('active');
+  authSubmit.textContent = 'Create account';
+  authError.textContent = '';
+});
+
+authForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const username = document.getElementById('authUsername').value.trim();
+  const password = document.getElementById('authPassword').value;
+  const endpoint = authMode === 'login' ? '/api/auth/login' : '/api/auth/register';
+  try {
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password })
+    });
+    const data = await res.json();
+    if(!res.ok){
+      authError.textContent = data.error || 'Something went wrong.';
+      return;
+    }
+    authToken = data.token;
+    currentUsername = data.username;
+    localStorage.setItem('tg_token', authToken);
+    localStorage.setItem('tg_username', currentUsername);
+    authModalOverlay.classList.remove('show');
+    updateAccountUI();
+    currentConversationId = null;
+  } catch(err){
+    authError.textContent = "Couldn't reach the server — please try again.";
+  }
+});
+
+async function verifyStoredAuth(){
+  if(!authToken) return;
+  try {
+    const res = await fetch('/api/auth/me', { headers: { 'Authorization': 'Bearer ' + authToken } });
+    if(!res.ok){
+      authToken = null; currentUsername = null;
+      localStorage.removeItem('tg_token'); localStorage.removeItem('tg_username');
+    }
+    updateAccountUI();
+  } catch(err){ /* ignore — assume still valid, will fail gracefully later if not */ }
+}
+verifyStoredAuth();
+
+/* ---------- Conversations (Wura chat history, grouped by topic) ---------- */
+let currentConversationId = null;
+let viewingHistory = false;
+
+function showConversationList(){
+  assistantMessages.style.display = 'none';
+  document.getElementById('assistantInputRow').style.display = 'none';
+  document.getElementById('assistantConversations').style.display = 'flex';
+}
+function showChatView(){
+  document.getElementById('assistantConversations').style.display = 'none';
+  assistantMessages.style.display = 'flex';
+  document.getElementById('assistantInputRow').style.display = 'flex';
+}
+
+async function loadConversationList(){
+  const list = document.getElementById('conversationList');
+  list.innerHTML = '<div class="empty-state">Loading…</div>';
+  try {
+    const res = await fetch('/api/assistant/conversations', {
+      headers: { 'Authorization': 'Bearer ' + authToken }
+    });
+    if(!res.ok){ list.innerHTML = '<div class="empty-state">Could not load your chats.</div>'; return; }
+    const conversations = await res.json();
+    if(conversations.length === 0){
+      list.innerHTML = '<div class="empty-state">No saved chats yet — ask Wura something to start one.</div>';
+      return;
+    }
+    list.innerHTML = '';
+    conversations.forEach(c => {
+      const item = document.createElement('div');
+      item.className = 'conversation-item' + (c.id === currentConversationId ? ' active' : '');
+      item.textContent = c.title;
+      item.addEventListener('click', () => openConversation(c.id));
+      list.appendChild(item);
+    });
+  } catch(err){
+    list.innerHTML = '<div class="empty-state">Could not load your chats.</div>';
+  }
+}
+
+async function openConversation(id){
+  try {
+    const res = await fetch(`/api/assistant/conversations/${id}/messages`, {
+      headers: { 'Authorization': 'Bearer ' + authToken }
+    });
+    if(!res.ok) return;
+    const messages = await res.json();
+    currentConversationId = id;
+    chatHistory = [];
+    assistantMessages.innerHTML = '';
+    messages.forEach(m => {
+      addMessage(m.content, m.role === 'user' ? 'user' : 'bot', m.role === 'assistant' ? m.source : null);
+      chatHistory.push({ role: m.role, content: m.content });
+    });
+    viewingHistory = false;
+    showChatView();
+  } catch(err){
+    // chat still usable even if this fails
+  }
+}
+
+document.getElementById('assistantHistoryBtn').addEventListener('click', () => {
+  viewingHistory = !viewingHistory;
+  if(viewingHistory){ showConversationList(); loadConversationList(); }
+  else { showChatView(); }
+});
+
+document.getElementById('btnNewChat').addEventListener('click', () => {
+  currentConversationId = null;
+  chatHistory = [];
+  assistantMessages.innerHTML = '';
+  addMessage("Mbolo! 👋 I'm Wura, your local guide for the Tropicana area. Ask me things like \"where can I get fuel near here\" or \"any good restaurants close by\" and I'll point you to real places on this map.", 'bot');
+  viewingHistory = false;
+  showChatView();
+});
