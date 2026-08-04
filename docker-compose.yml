@@ -1,13 +1,79 @@
 services:
-  tropicana-guide:
-    build: .
-    container_name: tropicana_guide_app
-    ports:
-      - "5000:5000"
-    volumes:
-      - .:/globetrotter
+  postgres:
+    image: postgres:16-alpine
+    container_name: tropicana_postgres
     environment:
-      - FLASK_ENV=development
-      - PORT=5000
-    env_file:
-      - .env
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db-init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - tropicana-net
+
+  locations-service:
+    build: ./locations-service
+    container_name: tropicana_locations
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    volumes:
+      - ./data:/app/data:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5001/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    expose:
+      - "5001"
+    networks:
+      - tropicana-net
+
+  assistant-service:
+    build: ./assistant-service
+    container_name: tropicana_assistant
+    environment:
+      LOCATIONS_SERVICE_URL: http://locations-service:5001
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      locations-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5002/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    expose:
+      - "5002"
+    networks:
+      - tropicana-net
+
+  gateway:
+    build: ./gateway
+    container_name: tropicana_gateway
+    ports:
+      - "5000:80"
+    depends_on:
+      locations-service:
+        condition: service_healthy
+      assistant-service:
+        condition: service_healthy
+    networks:
+      - tropicana-net
+
+networks:
+  tropicana-net:
+    driver: bridge
+
+volumes:
+  pgdata:

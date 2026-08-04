@@ -1,41 +1,22 @@
 """
-app/assistant.py
+app/assistant.py — assistant-service
 
-AI tour guide assistant endpoint.
-
-Design note (resilience pattern):
-    This endpoint tries a live Claude API call first, IF an ANTHROPIC_API_KEY
-    is configured in the environment. If the key is missing, the request
-    times out, or the API call fails for any reason, it automatically falls
-    back to a lightweight, rule-based local assistant grounded in the same
-    real POI data. The caller always gets a helpful answer either way — this
-    graceful degradation is a deliberate design choice, not an accident.
-
-The rule-based assistant understands three kinds of questions:
-    1. Direct name lookups        — "find Pharmacie Tropicana"
-    2. Category questions          — "where can I get fuel near here"
-    3. Point-to-point directions    — "how do I get from Carrefour Tropicana
-                                        to Pharmacie Tropicana"
-For (3), it also returns a small "action" payload so the frontend can
-automatically draw the real route on the map, not just describe it in text.
-
-Routes
-------
-POST /api/assistant
-    Body: {"message": "...", "history": [...]}
-    Returns: {"reply": "...", "source": "live"|"fallback", "action": {...}|null}
+Same live+fallback design as the monolith version: tries the live Claude
+API first if ANTHROPIC_API_KEY is set, falls back to the rule-based local
+guide on any failure. POI data now comes over HTTP from locations-service
+(via Docker DNS) instead of a local JSON file — that's the service boundary.
 """
 import math
 import os
 
+import requests
 from flask import Blueprint, current_app, jsonify, request
-
-from app.models import get_all_pois
 
 assistant_bp = Blueprint("assistant", __name__)
 
 ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
 ANTHROPIC_VERSION = "2023-06-01"
+LOCATIONS_SERVICE_URL = os.environ.get("LOCATIONS_SERVICE_URL", "http://locations-service:5001")
 
 TROPICANA_LANDMARK = {"lat": 3.8171, "lng": 11.5257, "label": "Carrefour Tropicana"}
 
@@ -43,12 +24,10 @@ CURRENT_LOCATION_PHRASES = [
     "here", "my location", "current location", "where i am",
     "where i'm standing", "standing at", "right now", "this spot",
 ]
-
 DIRECTION_PHRASES = [
     "how do i get", "how to get", "direction", "route", "way to",
     "get to", "get from", " to ",
 ]
-
 CATEGORY_KEYWORDS = {
     "hotel": ["hotel", "stay", "sleep", "lodging", "room"],
     "restaurant": ["restaurant", "eat", "food", "dinner", "lunch", "grill", "meal"],
@@ -62,6 +41,12 @@ CATEGORY_KEYWORDS = {
 }
 
 
+def _get_all_pois():
+    resp = requests.get(f"{LOCATIONS_SERVICE_URL}/api/pois", timeout=5)
+    resp.raise_for_status()
+    return resp.json()
+
+
 def _build_system_prompt(pois):
     context_lines = []
     for p in pois:
@@ -72,38 +57,26 @@ def _build_system_prompt(pois):
             line += f" Phone: {p['phone']}."
         context_lines.append(line)
     context = "\n".join(context_lines)
-
     return (
         "You are a warm, knowledgeable local tour guide assistant for the "
         "Tropicana area in Mvan/Ekoumdoum, Yaoundé, Cameroon. You help "
         "residents and visitors find hotels, restaurants, hospitals, "
         "pharmacies, schools, markets, fuel stations, banks, and offices in "
-        "this specific area.\n\n"
-        "Real, current data about places in and around the area:\n"
-        f"{context}\n\n"
-        "Ground your answers in this data whenever a question matches it, "
-        "mentioning specific place names and short practical notes. If "
-        "asked about something not covered in the data, say so honestly "
-        "rather than inventing details. Keep answers conversational and "
-        "concise."
+        "this specific area.\n\nReal, current data about places in and "
+        f"around the area:\n{context}\n\nGround your answers in this data "
+        "whenever a question matches it, mentioning specific place names "
+        "and short practical notes. If asked about something not covered "
+        "in the data, say so honestly rather than inventing details. Keep "
+        "answers conversational and concise."
     )
 
 
 def _call_claude(message, history, pois):
-    """Attempt a live Claude API call. Raises on any failure.
-
-    'requests' is imported here, not at the top of the file, so the whole
-    app can start and run perfectly (using the local fallback assistant)
-    even on a machine where 'requests' isn't installed yet.
-    """
-    import requests  # local import — see docstring above
-
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
         raise RuntimeError("No ANTHROPIC_API_KEY configured")
 
     messages = list(history) + [{"role": "user", "content": message}]
-
     response = requests.post(
         ANTHROPIC_API_URL,
         headers={
@@ -127,7 +100,6 @@ def _call_claude(message, history, pois):
 
 
 def _haversine_km(lat1, lng1, lat2, lng2):
-    """Straight-line ('as the crow flies') distance between two points."""
     R = 6371.0
     phi1, phi2 = math.radians(lat1), math.radians(lat2)
     dphi = math.radians(lat2 - lat1)
@@ -143,10 +115,6 @@ GENERIC_AREA_WORDS = {
 
 
 def _unique_words_by_poi(pois):
-    """Map each POI id to the words in its name that don't appear in any
-    other POI's name — so a shared word like 'Pharmacie' or 'Tropicana'
-    can never be mistaken for a specific place on its own.
-    """
     from collections import Counter
 
     word_counts = Counter()
@@ -165,13 +133,6 @@ def _unique_words_by_poi(pois):
 
 
 def _find_matching_pois(message, pois):
-    """Find POIs mentioned by name in the message, in the order they appear.
-
-    Exact full-name mentions always count. A single distinctive word only
-    counts if it's unique to that one place across the entire dataset —
-    otherwise a shared word (e.g. two different "Pharmacie ..." names)
-    could wrongly match the wrong business.
-    """
     lowered = message.lower()
     unique_words = _unique_words_by_poi(pois)
 
@@ -213,13 +174,10 @@ def _poi_detail_line(p):
 
 
 def _fallback_response(message, pois):
-    """Rule-based local assistant. Returns (reply_text, action_or_none)."""
     named_matches = _find_matching_pois(message, pois)
 
-    # 1. Directions between two points
     if _looks_like_directions_query(message):
         origin = destination = None
-
         if len(named_matches) >= 2:
             origin, destination = named_matches[0], named_matches[1]
         elif len(named_matches) == 1:
@@ -227,11 +185,9 @@ def _fallback_response(message, pois):
             origin = TROPICANA_LANDMARK
 
         if origin and destination:
-            o_lat = origin["lat"]
-            o_lng = origin["lng"]
+            o_lat, o_lng = origin["lat"], origin["lng"]
             o_label = origin.get("label") or origin.get("name")
             d_lat, d_lng, d_label = destination["lat"], destination["lng"], destination["name"]
-
             km = _haversine_km(o_lat, o_lng, d_lat, d_lng)
             reply = (
                 f"{o_label} to {d_label} is about {km:.1f} km as the crow flies. "
@@ -245,7 +201,6 @@ def _fallback_response(message, pois):
             }
             return reply, action
 
-    # 2. Direct name lookup (e.g. "find Pharmacie Tropicana")
     if named_matches:
         p = named_matches[0]
         return (
@@ -253,7 +208,6 @@ def _fallback_response(message, pois):
             {"type": "focus", "lat": p["lat"], "lng": p["lng"], "label": p["name"]},
         )
 
-    # 2b. Mentions of the Tropicana landmark/roundabout itself
     if _mentions_current_location(message) and "tropicana" in message.lower():
         return (
             "Carrefour Tropicana is the main roundabout this whole guide is "
@@ -262,7 +216,6 @@ def _fallback_response(message, pois):
             {"type": "focus", "lat": TROPICANA_LANDMARK["lat"], "lng": TROPICANA_LANDMARK["lng"], "label": "Carrefour Tropicana"},
         )
 
-    # 3. Category questions
     lowered = message.lower()
     for category, keywords in CATEGORY_KEYWORDS.items():
         if any(k in lowered for k in keywords):
@@ -271,7 +224,6 @@ def _fallback_response(message, pois):
                 lines = [f"- {_poi_detail_line(p)}" for p in matches]
                 return "Here's what I have near Tropicana:\n" + "\n".join(lines), None
 
-    # 4. Small talk
     if any(g in lowered for g in ["hello", "hi", "mbolo", "hey"]):
         return (
             "Mbolo! I'm your Tropicana area guide. Ask me to find a specific "
@@ -283,7 +235,6 @@ def _fallback_response(message, pois):
     if any(g in lowered for g in ["thank", "thanks", "merci"]):
         return "You're welcome! Safe travels around Tropicana.", None
 
-    # 5. Nothing matched
     return (
         "I couldn't match that to a specific place in my data. Try naming a "
         "place directly (e.g. \"find CABTAL\"), asking about a category "
@@ -294,14 +245,13 @@ def _fallback_response(message, pois):
     )
 
 
+@assistant_bp.route("/health", methods=["GET"])
+def health():
+    return jsonify({"status": "ok"}), 200
+
+
 @assistant_bp.route("/api/assistant", methods=["POST"])
 def ask_assistant():
-    """Answer a tour-guide question, grounded in the real POI dataset.
-
-    Tries a live Claude call first (if ANTHROPIC_API_KEY is set); falls back
-    to a rule-based local assistant on any failure, so this endpoint always
-    returns a helpful answer rather than an error.
-    """
     data = request.get_json(silent=True) or {}
     message = data.get("message", "").strip()
     history = data.get("history", [])
@@ -309,7 +259,7 @@ def ask_assistant():
     if not message:
         return jsonify({"error": "message is required"}), 400
 
-    pois = get_all_pois()
+    pois = _get_all_pois()
 
     try:
         reply = _call_claude(message, history, pois)
