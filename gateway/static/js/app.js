@@ -42,6 +42,16 @@ L.marker([CENTER.lat, CENTER.lng], {
   })
 }).addTo(map).bindPopup("<b>Tropicana</b><br>Reference point for this guide");
 
+/* ---------- Collapse place labels when zoomed out, to avoid clutter ---------- */
+const LABEL_MIN_ZOOM = 14;
+function updateLabelVisibility(){
+  const el = map.getContainer();
+  if(map.getZoom() < LABEL_MIN_ZOOM){ el.classList.add('hide-poi-labels'); }
+  else { el.classList.remove('hide-poi-labels'); }
+}
+map.on('zoomend', updateLabelVisibility);
+updateLabelVisibility();
+
 function makeIcon(cat){
   const meta = CATEGORIES[cat] || { color:"#333", icon:"📍" };
   return L.divIcon({
@@ -58,6 +68,21 @@ async function loadPois(){
 
   ALL_POIS.forEach(p => {
     const m = L.marker([p.lat, p.lng], { icon: makeIcon(p.category) }).addTo(map);
+    m.bindTooltip(p.name, {
+      permanent: true,
+      direction: 'top',
+      offset: [0, -22],
+      className: 'poi-label'
+    });
+    if(p.image){
+      m.on('mouseover', () => {
+        L.popup({ closeButton: false, className: 'poi-hover-popup', offset: [0, -8] })
+          .setLatLng([p.lat, p.lng])
+          .setContent(`<img src="${p.image}" alt="${p.name}"><div class="poi-hover-name">${p.name}</div>`)
+          .openOn(map);
+      });
+      m.on('mouseout', () => { map.closePopup(); });
+    }
     m.on('click', () => selectPoi(p.id));
     markers[p.id] = m;
   });

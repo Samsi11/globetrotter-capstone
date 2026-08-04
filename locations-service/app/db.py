@@ -70,6 +70,7 @@ def fetch_pois(q="", category=""):
                     LOWER(category) LIKE %(q)s OR LOWER(COALESCE(note, '')) LIKE %(q)s
                 )"""
                 params["q"] = f"%{q.lower()}%"
+            query += " ORDER BY name ASC"
             cur.execute(query, params)
             rows = [dict(row) for row in cur.fetchall()]
             for row in rows:
