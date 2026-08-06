@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.3/css/bootstrap.min.css">
 <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
@@ -27,11 +28,11 @@
 </div>
 
 <div class="app">
-  <button class="sidebar-toggle" id="sidebarToggle">☰</button>
+  <button class="sidebar-toggle" id="sidebarToggle" type="button" data-bs-toggle="offcanvas" data-bs-target="#sidebar" aria-controls="sidebar">☰</button>
 
-  <div class="sidebar" id="sidebar">
+  <div class="sidebar offcanvas-lg offcanvas-start" id="sidebar" tabindex="-1" aria-labelledby="sidebarLabel">
     <div class="search-block">
-      <h1>Find your way around</h1>
+      <h1 id="sidebarLabel">Find your way around</h1>
       <p class="tag">Real places around the Tropicana / Mvan / Ekoumdoum corridor in Yaoundé — search by name, or filter by category.</p>
       <div class="search-input-row">
         <span class="icon">🔍</span>
@@ -110,6 +111,7 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.3/js/bootstrap.bundle.min.js"></script>
 <script src="/static/js/app.js"></script>
 </body>
 </html>

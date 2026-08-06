@@ -19,6 +19,13 @@ const CATEGORIES = {
   office:     { label: "Offices & Organisations", color: "#8A6D3B", icon: "🏢" }
 };
 
+function closeSidebarOnMobile(){
+  if(window.innerWidth >= 992) return;
+  const sidebarEl = document.getElementById('sidebar');
+  const instance = bootstrap.Offcanvas.getOrCreateInstance(sidebarEl);
+  instance.hide();
+}
+
 let ALL_POIS = [];
 let markers = {};
 let routeLayer = null;
@@ -196,6 +203,7 @@ function selectPoi(id){
   detailPanel.classList.add('show');
 
   if(routeLayer){ map.removeLayer(routeLayer); routeLayer = null; }
+  closeSidebarOnMobile();
 }
 
 document.getElementById('btnDirections').addEventListener('click', () => {
@@ -205,7 +213,7 @@ document.getElementById('btnDirections').addEventListener('click', () => {
   routeInfo.textContent = "Finding your route…";
   routeInfo.classList.add('show');
 
-  const startFrom = (start) => fetchRoute(start, p, routeInfo);
+  const startFrom = (start) => { closeSidebarOnMobile(); fetchRoute(start, p, routeInfo); };
 
   if(navigator.geolocation){
     navigator.geolocation.getCurrentPosition(
@@ -237,11 +245,6 @@ function fetchRoute(start, dest, routeInfo){
     });
 }
 
-/* ---------- Sidebar toggle (mobile) ---------- */
-document.getElementById('sidebarToggle').addEventListener('click', () => {
-  document.getElementById('sidebar').classList.toggle('collapsed');
-});
-
 /* ---------- AI assistant (calls OUR backend, not Anthropic directly) ---------- */
 const assistantFab = document.getElementById('assistantFab');
 const assistantPanel = document.getElementById('assistantPanel');
@@ -271,6 +274,7 @@ function addMessage(text, role, sourceTag){
 
 function handleAssistantAction(action){
   if(!action) return;
+  closeSidebarOnMobile();
 
   if(action.type === 'focus'){
     map.flyTo([action.lat, action.lng], 16, { duration: 0.6 });
