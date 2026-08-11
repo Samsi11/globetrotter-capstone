@@ -200,6 +200,9 @@ function selectPoi(id){
   else { callBtn.style.display='none'; }
 
   document.getElementById('routeInfo').classList.remove('show');
+  document.getElementById('turnByTurn').classList.remove('show');
+  document.getElementById('turnByTurn').innerHTML = '';
+  currentRouteSteps = [];
   detailPanel.classList.add('show');
 
   if(routeLayer){ map.removeLayer(routeLayer); routeLayer = null; }
@@ -226,8 +229,66 @@ document.getElementById('btnDirections').addEventListener('click', () => {
   }
 });
 
+let currentRouteSteps = [];
+
+function humanizeStep(step, isLast){
+  const name = step.name && step.name.trim() ? step.name.trim() : null;
+  const m = step.maneuver || {};
+  const type = m.type;
+  const modifier = m.modifier;
+
+  if(type === 'depart'){
+    return name ? `Head out onto ${name}` : 'Head out';
+  }
+  if(type === 'arrive'){
+    return "You've arrived at your destination";
+  }
+  if(type === 'roundabout' || type === 'rotary'){
+    const exit = m.exit ? `the ${m.exit}${m.exit === 1 ? 'st' : m.exit === 2 ? 'nd' : m.exit === 3 ? 'rd' : 'th'} exit` : 'the exit';
+    return name ? `At the roundabout, take ${exit} onto ${name}` : `At the roundabout, take ${exit}`;
+  }
+  if(type === 'fork'){
+    const dir = modifier && modifier.includes('left') ? 'left' : modifier && modifier.includes('right') ? 'right' : 'ahead';
+    return `At the fork, keep ${dir}` + (name ? ` onto ${name}` : '');
+  }
+  if(type === 'merge'){
+    return name ? `Merge onto ${name}` : 'Merge';
+  }
+  if(type === 'new name' || type === 'continue'){
+    return name ? `Continue onto ${name}` : 'Continue straight';
+  }
+  if(type === 'turn' || type === 'end of road'){
+    let dir = 'straight';
+    if(modifier){
+      if(modifier.includes('sharp right')) dir = 'sharply right';
+      else if(modifier.includes('slight right')) dir = 'slightly right';
+      else if(modifier.includes('right')) dir = 'right';
+      else if(modifier.includes('sharp left')) dir = 'sharply left';
+      else if(modifier.includes('slight left')) dir = 'slightly left';
+      else if(modifier.includes('left')) dir = 'left';
+      else if(modifier.includes('uturn')) dir = 'around (U-turn)';
+    }
+    const verb = dir === 'straight' ? 'Continue straight' : `Turn ${dir}`;
+    return name ? `${verb} onto ${name}` : verb;
+  }
+  return name ? `Continue onto ${name}` : 'Continue';
+}
+
+function renderTurnByTurn(steps){
+  const container = document.getElementById('turnByTurn');
+  if(!steps.length){ container.classList.remove('show'); container.innerHTML = ''; return; }
+  const items = steps.map((step, i) => {
+    const instruction = humanizeStep(step, i === steps.length - 1);
+    const km = (step.distance / 1000).toFixed(1);
+    const metaText = step.distance > 0 ? `<span class="step-meta">${km} km</span>` : '';
+    return `<li>${instruction}${metaText}</li>`;
+  }).join('');
+  container.innerHTML = `<ol>${items}</ol>`;
+  container.classList.add('show');
+}
+
 function fetchRoute(start, dest, routeInfo){
-  const url = `https://router.project-osrm.org/route/v1/driving/${start.lng},${start.lat};${dest.lng},${dest.lat}?overview=full&geometries=geojson`;
+  const url = `https://router.project-osrm.org/route/v1/driving/${start.lng},${start.lat};${dest.lng},${dest.lat}?overview=full&geometries=geojson&steps=true`;
   fetch(url)
     .then(r => r.json())
     .then(data => {
@@ -239,9 +300,14 @@ function fetchRoute(start, dest, routeInfo){
       const km = (route.distance/1000).toFixed(1);
       const mins = Math.round(route.duration/60);
       routeInfo.textContent = `🚗 ${km} km · about ${mins} min driving from ${start.label}`;
+
+      currentRouteSteps = (route.legs && route.legs[0] && route.legs[0].steps) ? route.legs[0].steps : [];
+      renderTurnByTurn(currentRouteSteps);
     })
     .catch(() => {
       routeInfo.textContent = "Couldn't calculate a live route right now — try again in a moment.";
+      currentRouteSteps = [];
+      renderTurnByTurn([]);
     });
 }
 
@@ -522,4 +588,106 @@ document.getElementById('btnNewChat').addEventListener('click', () => {
   addMessage("Mbolo! 👋 I'm Wura, your local guide for the Tropicana area. Ask me things like \"where can I get fuel near here\" or \"any good restaurants close by\" and I'll point you to real places on this map.", 'bot');
   viewingHistory = false;
   showChatView();
+});
+
+/* ---------- GPS live location tracking ---------- */
+const GPS_LANDMARK = { lat: 3.8171, lng: 11.5257 }; // Carrefour Tropicana — matches backend TROPICANA_LANDMARK
+const ARRIVAL_RADIUS_KM = 0.3;
+const ARRIVAL_RESET_RADIUS_KM = 0.5;
+const NEARBY_POI_RADIUS_KM = 0.08;
+
+let gpsWatchId = null;
+let hasArrivedTropicana = false;
+let lastKnownPosition = null;
+
+function haversineKmClient(lat1, lng1, lat2, lng2){
+  const R = 6371;
+  const toRad = d => d * Math.PI / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLng/2)**2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
+
+function showToast(message){
+  const container = document.getElementById('gpsToastContainer');
+  const toast = document.createElement('div');
+  toast.className = 'gps-toast';
+  toast.textContent = message;
+  container.appendChild(toast);
+  if(typeof voiceOverEnabled !== 'undefined' && voiceOverEnabled && typeof speak === 'function'){
+    speak(message);
+  }
+  setTimeout(() => {
+    toast.classList.add('fade-out');
+    setTimeout(() => toast.remove(), 400);
+  }, 4000);
+}
+
+function nearestPoi(lat, lng){
+  if(!ALL_POIS.length) return null;
+  let best = null, bestDist = Infinity;
+  ALL_POIS.forEach(p => {
+    const d = haversineKmClient(lat, lng, p.lat, p.lng);
+    if(d < bestDist){ bestDist = d; best = p; }
+  });
+  return best ? { poi: best, distanceKm: bestDist } : null;
+}
+
+function updateLocationStatus(lat, lng){
+  const btn = document.getElementById('locationToggleBtn');
+  const nearest = nearestPoi(lat, lng);
+  if(nearest && nearest.distanceKm <= NEARBY_POI_RADIUS_KM){
+    btn.textContent = `📍 You're at ${nearest.poi.name}`;
+  } else {
+    const distToLandmark = haversineKmClient(lat, lng, GPS_LANDMARK.lat, GPS_LANDMARK.lng);
+    btn.textContent = `📍 ${distToLandmark.toFixed(1)} km from Tropicana`;
+  }
+}
+
+function checkTropicanaArrival(lat, lng){
+  const distToLandmark = haversineKmClient(lat, lng, GPS_LANDMARK.lat, GPS_LANDMARK.lng);
+  if(!hasArrivedTropicana && distToLandmark <= ARRIVAL_RADIUS_KM){
+    hasArrivedTropicana = true;
+    showToast("You've arrived in Tropicana! 🎉");
+  } else if(hasArrivedTropicana && distToLandmark > ARRIVAL_RESET_RADIUS_KM){
+    hasArrivedTropicana = false;
+  }
+}
+
+function onGpsPosition(pos){
+  const { latitude, longitude } = pos.coords;
+  lastKnownPosition = { lat: latitude, lng: longitude };
+  updateLocationStatus(latitude, longitude);
+  checkTropicanaArrival(latitude, longitude);
+}
+
+function onGpsError(err){
+  showToast("Couldn't get your location — check your browser's location permission.");
+  stopGpsTracking();
+}
+
+function startGpsTracking(){
+  if(!navigator.geolocation){
+    showToast("Your browser doesn't support location tracking.");
+    return;
+  }
+  gpsWatchId = navigator.geolocation.watchPosition(onGpsPosition, onGpsError, {
+    enableHighAccuracy: true, maximumAge: 10000, timeout: 15000
+  });
+  document.getElementById('locationToggleBtn').classList.add('active');
+}
+
+function stopGpsTracking(){
+  if(gpsWatchId !== null){ navigator.geolocation.clearWatch(gpsWatchId); gpsWatchId = null; }
+  lastKnownPosition = null;
+  hasArrivedTropicana = false;
+  const btn = document.getElementById('locationToggleBtn');
+  btn.classList.remove('active');
+  btn.textContent = '📍 Enable Location';
+}
+
+document.getElementById('locationToggleBtn').addEventListener('click', () => {
+  if(gpsWatchId !== null){ stopGpsTracking(); }
+  else { startGpsTracking(); }
 });

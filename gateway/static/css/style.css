@@ -270,3 +270,33 @@ body{
 .poi-hover-popup .leaflet-popup-tip{ display: none; }
 
 .hide-poi-labels .poi-label{ display: none !important; }
+
+.btn-location{
+  background:rgba(230,255,240,0.08); color:var(--cream); font-size:0.78rem;
+  padding:7px 14px; border-radius:999px; border:1px solid rgba(255,255,255,0.14);
+  font-weight:600; cursor:pointer; margin-left:10px; white-space:nowrap;
+}
+.btn-location:hover{ background:rgba(230,255,240,0.16); }
+.btn-location.active{ background:var(--gold); color:var(--forest-deep); border-color:var(--gold); }
+
+.gps-toast-container{
+  position:fixed; top:76px; left:50%; transform:translateX(-50%);
+  z-index:2000; display:flex; flex-direction:column; gap:8px; align-items:center;
+  pointer-events:none;
+}
+.gps-toast{
+  background:var(--forest-deep); color:var(--cream); padding:10px 18px; border-radius:999px;
+  font-size:0.85rem; font-weight:600; box-shadow:var(--shadow); opacity:1;
+  transition:opacity .4s ease; border:1.5px solid var(--gold);
+}
+.gps-toast.fade-out{ opacity:0; }
+
+.turn-by-turn{
+  margin-top:10px; max-height:180px; overflow-y:auto; display:none;
+}
+.turn-by-turn.show{ display:block; }
+.turn-by-turn ol{ margin:0; padding-left:20px; }
+.turn-by-turn li{
+  font-size:0.8rem; color:var(--forest-deep); line-height:1.5; margin-bottom:6px;
+}
+.turn-by-turn li .step-meta{ color:var(--muted); font-size:0.72rem; display:block; }

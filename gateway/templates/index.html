@@ -22,6 +22,7 @@
   </div>
   <div class="route-ribbon"></div>
   <div class="locale-pill">📍 Tropicana Roundabout, Mvan</div>
+  <button class="btn-location" id="locationToggleBtn" type="button">📍 Enable Location</button>
   <div class="account-area" id="accountArea">
     <button class="btn-account" id="accountBtn">👤 Sign in</button>
   </div>
@@ -61,6 +62,7 @@
           <a class="btn btn-ghost" id="btnCall" style="display:none; text-decoration:none;">📞 Call</a>
         </div>
         <div class="route-info" id="routeInfo"></div>
+        <div class="turn-by-turn" id="turnByTurn"></div>
       </div>
     </div>
 
@@ -109,6 +111,8 @@
     <p class="auth-note">Signing in isn't required — you can use the guide fully without an account. Sign in to keep your chat history across visits.</p>
   </div>
 </div>
+
+<div class="gps-toast-container" id="gpsToastContainer"></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.3/js/bootstrap.bundle.min.js"></script>
